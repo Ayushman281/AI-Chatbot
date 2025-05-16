@@ -35,6 +35,6 @@ function parseSchema(schema) {
     return description.trim();
 }
 
-module.exports = {
+export {
     parseSchema,
 };

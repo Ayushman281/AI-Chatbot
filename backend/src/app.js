@@ -1,6 +1,6 @@
-const express = require('express');
-const cors = require('cors');
-const agentRoutes = require('./routes/agentRoutes');
+import express from 'express';
+import cors from 'cors';
+import agentRoutes from './routes/agentRoutes.js';
 
 const app = express();
 app.use(cors());

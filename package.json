@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@llamaindex/core": "^0.6.5",
+    "llamaindex": "^0.10.6"
+  }
+}
