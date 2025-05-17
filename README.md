@@ -53,12 +53,7 @@ The system transforms natural language questions into SQL queries, executes them
    
 3. Update the `.env` file with your API keys and configuration
 
-4. Start the application
-   ```bash
-   docker-compose up
-   ```
-
-5. Access the application at [http://localhost:3000](http://localhost:3000)
+4. Access the application at [http://localhost:3000](http://localhost:3000)
 
 ## System Architecture
 
