@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import agentRoutes from './src/routes/agentRoutes.js';
 import logger from './utils/logger.js';
 import axios from 'axios';
+import { handleAgentQuery } from './src/controllers/agentController.js';
 
 // Load environment variables
 dotenv.config();
@@ -47,10 +48,13 @@ const PORT = process.env.PORT || 8000;
 // Middleware
 app.use(cors({
     origin: [
-        'https://ai-chatbot-five-flame.vercel.app', // No trailing slash!
-        'http://localhost:5173'
+        'https://ai-chatbot-five-flame.vercel.app',
+        'http://localhost:5173',
+        'https://ai-chatbot-five-flame.vercel.app'
     ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(helmet());
@@ -102,6 +106,26 @@ app.get('/api/test-model', async (req, res) => {
 
 // Routes
 app.use('/api', agentRoutes);
+
+// Direct route handler for /ask (without /api prefix)
+app.post('/ask', async (req, res) => {
+    try {
+        return handleAgentQuery(req, res);
+    } catch (error) {
+        console.error('Error in /ask route:', error);
+        return res.status(500).json({ error: error.message || 'Internal server error' });
+    }
+});
+
+// Add a health check endpoint that returns a 200 status
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Optional: Add a redirect for root path
+app.get('/', (req, res) => {
+    res.redirect('https://ai-chatbot-five-flame.vercel.app/');
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
