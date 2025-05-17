@@ -13,12 +13,23 @@ dotenv.config();
 
 // Validate required environment variables
 const requiredEnvVars = [
-    'DATABASE_URL',
     'OPENROUTER_API_KEY',
     'OPENROUTER_MODEL'
 ];
 
-const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+// Only require DATABASE_URL if individual DB params aren't set
+if (!process.env.DATABASE_URL && !(process.env.DB_HOST && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME)) {
+    requiredEnvVars.push('DATABASE_URL or DB_HOST+DB_USER+DB_PASSWORD+DB_NAME');
+}
+
+const missingEnvVars = requiredEnvVars.filter(varName => {
+    if (varName.includes(' or ')) {
+        const [option1, option2] = varName.split(' or ');
+        const option2Parts = option2.split('+');
+        return !process.env[option1] && !(option2Parts.every(part => process.env[part]));
+    }
+    return !process.env[varName];
+});
 
 if (missingEnvVars.length > 0) {
     console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
@@ -27,7 +38,7 @@ if (missingEnvVars.length > 0) {
 // Log configuration
 console.log("Environment variables loaded:");
 console.log(`- OpenRouter Model: ${process.env.OPENROUTER_MODEL}`);
-console.log(`- DB Host: ${process.env.DATABASE_URL ? 'Set' : 'Not set'}`);
+console.log(`- DB Host: ${process.env.DATABASE_URL ? 'Set via URL' : (process.env.DB_HOST || 'Not set')}`);
 
 // Initialize Express app
 const app = express();
@@ -67,7 +78,7 @@ app.get('/test', (req, res) => {
 app.get('/api/test-model', async (req, res) => {
     try {
         const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-            model: process.env.OPENROUTER_MODEL || "tngtech/deepseek-r1t-chimera:free",
+            model: process.env.OPENROUTER_MODEL || "deepseek/deepseek-r1:free",
             messages: [{ role: 'user', content: 'Say hello' }]
         }, {
             headers: {

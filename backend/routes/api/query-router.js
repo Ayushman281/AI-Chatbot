@@ -128,4 +128,55 @@ router.get('/schema', async (req, res) => {
     }
 });
 
+/**
+ * @route GET /api/query/test
+ * @description Test database connection and verify data exists
+ * @access Public
+ */
+router.get('/test', async (req, res) => {
+    try {
+        // Initialize data agent if not already
+        if (!dataAgent.initialized) {
+            await dataAgent.initialize();
+        }
+
+        // Run test queries to verify key tables have data
+        const tests = [
+            { table: 'albm', query: 'SELECT COUNT(*) FROM albm' },
+            { table: 'trk', query: 'SELECT COUNT(*) FROM trk' },
+            { table: 'artist', query: 'SELECT COUNT(*) FROM artist' }
+        ];
+
+        const results = {};
+        for (const test of tests) {
+            const result = await db.query(test.query);
+            results[test.table] = parseInt(result.rows[0].count);
+        }
+
+        // Sample data for each table
+        const samples = {};
+        if (results.albm > 0) {
+            samples.albm = await db.query('SELECT AlbumId, ttle, col1 FROM albm LIMIT 3');
+        }
+        if (results.trk > 0) {
+            samples.trk = await db.query('SELECT TrackNo, TrackTitle FROM trk LIMIT 3');
+        }
+        if (results.artist > 0) {
+            samples.artist = await db.query('SELECT ArtistIdentifier, NM FROM artist LIMIT 3');
+        }
+
+        res.json({
+            success: true,
+            counts: results,
+            samples: samples
+        });
+    } catch (error) {
+        logger.error('Error testing database:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'An error occurred testing the database'
+        });
+    }
+});
+
 export default router;

@@ -9,7 +9,7 @@ export default {
     ai: {
         // OpenRouter settings
         openRouterApiKey: process.env.OPENROUTER_API_KEY,
-        openRouterModel: process.env.OPENROUTER_MODEL || "tngtech/deepseek-r1t-chimera:free",
+        openRouterModel: process.env.OPENROUTER_MODEL || "deepseek/deepseek-r1:free",
         huggingfaceApiKey: process.env.HUGGINGFACE_API_KEY,
     },
 

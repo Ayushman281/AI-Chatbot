@@ -26,13 +26,13 @@ const openRouterClient = axios.create({
     headers: {
         'Authorization': `Bearer ${API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.APPLICATION_URL || 'https://ai-chatbot-five-flame.vercel.app', // Update with your deployed URL
+        'HTTP-Referer': process.env.APPLICATION_URL || 'https://ai-chatbot-five-flame.vercel.app',
         'X-Title': 'AI Data Agent'
     }
 });
 
 // Use the correct model name
-const MODEL = process.env.OPENROUTER_MODEL || 'tngtech/deepseek-r1t-chimera:free';
+const MODEL = process.env.OPENROUTER_MODEL || 'dtngtech/deepseek-r1t-chimera:free';
 
 // Schema mapping to handle messy database (keep this unchanged)
 const SCHEMA_MAPPING = {
@@ -435,27 +435,61 @@ function getHardcodedResponse(question) {
 // In your generateSQL function, use this when rate limit is hit
 export async function generateSQL(question, schemaContext = []) {
     try {
+        console.log(`Generating SQL for question: "${question}"`);
+
+        // Create a much more explicit prompt that forces correct table names
+        const prompt = `
+YOU MUST USE THESE EXACT DATABASE NAMES - THIS IS CRITICAL:
+
+TABLES (THESE ARE NOT TYPOS, USE EXACTLY AS SHOWN):
+- "albm" for albums (NOT "album" or "albums")
+- "trk" for tracks (NOT "track" or "tracks")
+- "inv_line" for invoice lines (NOT "invoice_line")
+
+COLUMNS (THESE ARE NOT TYPOS, USE EXACTLY AS SHOWN):
+- "ttle" for album titles (NOT "title")
+- "col1" for album release years (NOT "year" or "release_year")
+- "NM" for artist names (NOT "name")
+- "TrackTitle" for track names
+- "cost" for track prices
+
+QUESTION: ${question}
+
+EXAMPLE QUERIES TO FOLLOW:
+1. To find albums from 2016:
+   SELECT ttle FROM albm WHERE col1 = 2016;
+
+2. To list expensive tracks:
+   SELECT TrackTitle, cost FROM trk WHERE cost > 0.99;
+
+3. To join artist and album:
+   SELECT artist.NM, albm.ttle FROM artist JOIN albm ON artist.ArtistIdentifier = albm.a_id;
+
+Generate ONLY the PostgreSQL query using EXACTLY the table and column names shown above.
+Return ONLY the SQL query with no explanation.`;
+
         const response = await openRouterClient.post('/chat/completions', {
             model: process.env.OPENROUTER_MODEL || 'tngtech/deepseek-r1t-chimera:free',
             messages: [
-                { role: 'system', content: 'You are an SQL expert.' },
-                { role: 'user', content: `Generate SQL for PostgreSQL to answer this question about a music database: "${question}".\nFor albums released in a specific year, use: SELECT ttle FROM albm WHERE col1 = <year>;` }
-            ]
+                {
+                    role: 'system',
+                    content: 'You are an SQL expert who ALWAYS uses the exact table and column names provided. NEVER substitute conventional names. The database schema has deliberately messy table and column names.'
+                },
+                { role: 'user', content: prompt }
+            ],
+            temperature: 0.1  // Lower temperature for more predictable output
         });
 
-        // Add defensive access to response data
-        if (response && response.data && response.data.choices &&
-            response.data.choices[0] && response.data.choices[0].message) {
-            return response.data.choices[0].message.content;
-        } else {
-            console.warn("Unexpected API response format:", JSON.stringify(response.data));
-            // Return fallback SQL for this specific question
-            if (question.toLowerCase().includes('album') &&
-                question.toLowerCase().includes('2016')) {
-                return "SELECT ttle FROM albm WHERE col1 = 2016";
-            }
-            return "SELECT * FROM trk LIMIT 5"; // Default fallback
+        if (response?.data?.choices?.[0]?.message?.content) {
+            // Extract just the SQL statement and validate/fix it
+            let sqlQuery = extractSQLFromResponse(response.data.choices[0].message.content);
+            sqlQuery = validateAndFixSQL(sqlQuery);
+            console.log(`Validated SQL: ${sqlQuery}`);
+            return sqlQuery;
         }
+
+        throw new Error('Unexpected API response structure');
+
     } catch (error) {
         console.error('OpenRouter API error:', error);
 
@@ -470,88 +504,122 @@ export async function generateSQL(question, schemaContext = []) {
     }
 }
 
+// Replace both extractSQLFromResponse functions with this improved version
+
+function extractSQLFromResponse(responseText) {
+    // Check for SQL between custom markers
+    const customMarkerMatch = responseText.match(/===SQL===\s*([\s\S]*?)\s*===ENDSQL===/);
+    if (customMarkerMatch) return customMarkerMatch[1].trim();
+
+    // Check for SQL in code blocks
+    const sqlBlockMatch = responseText.match(/```sql\s*([\s\S]*?)\s*```/);
+    if (sqlBlockMatch) return sqlBlockMatch[1].trim();
+
+    // Check for standalone SQL query patterns
+    const selectMatch = responseText.match(/\bSELECT\s+.*?(?:;|$)/is);
+    if (selectMatch) return selectMatch[0].trim();
+
+    // Comprehensive fallback for other SQL statement types
+    const fallbackRegex = /(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)\s+[\s\S]+?;/i;
+    const fallbackMatch = responseText.match(fallbackRegex);
+    if (fallbackMatch) return fallbackMatch[0].trim();
+
+    // If no patterns match, return the whole response
+    return responseText.trim();
+}
+
+// Add this function to validate and fix common table/column name mistakes
+function validateAndFixSQL(sql) {
+    // Fix common misspellings
+    const fixes = [
+        // Table name fixes
+        { wrong: /\b(?:album|albums)\b/gi, correct: "albm" },
+        { wrong: /\b(?:track|tracks)\b/gi, correct: "trk" },
+        { wrong: /\binvoice_lines?\b/gi, correct: "inv_line" },
+
+        // Column name fixes
+        { wrong: /\btitle\b/gi, correct: "ttle" },
+        { wrong: /\b(?:year|release_year)\b/gi, correct: "col1" },
+        { wrong: /\bname\b/gi, correct: "NM" },
+        { wrong: /\bprice\b/gi, correct: "cost" },
+
+        // Fix the quotes issue in WHERE clauses with numbers
+        { wrong: /WHERE\s+([\w\.]+)\s*=\s*["'](\d+)["']/gi, correct: "WHERE $1 = $2" }
+    ];
+
+    let fixedSQL = sql;
+    for (const fix of fixes) {
+        fixedSQL = fixedSQL.replace(fix.wrong, fix.correct);
+    }
+
+    return fixedSQL;
+}
+
 export const generateAnswer = async (question, result) => {
     try {
         const resultIsEmpty = !result || !result.rows || result.rows.length === 0;
 
         const prompt = `
-You are an AI data analyst that provides clear, direct answers to questions about a music database.
+You are answering a question about a music database.
 
-DATABASE CONTEXT: 
-This database has messy table and column names:
-- "albm" table contains album information (not "album")
-- "ttle" column contains album titles (not "title")
-- "col1" contains release years
-- "cost" contains track prices
+QUESTION: ${question}
 
-USER QUESTION: ${question}
+DATABASE RESULT: ${JSON.stringify(result?.rows || [])}
 
-QUERY RESULT: ${JSON.stringify(result)}
+RESULT IS EMPTY: ${resultIsEmpty}
 
-${resultIsEmpty ?
-                "IMPORTANT: The query returned no results. If this is a question about albums released in 2016, explain that the database shows 'Formation', 'Master of Puppets', 'Bohemian Rhapsody', 'Brown Sugar', and 'Unknown Album' were all released in 2016." :
-                "Provide specific details from the results."
-            }
+YOUR TASK:
+Provide a concise, helpful answer based solely on the data provided.
 
-Provide a conversational, direct answer that feels natural. Begin by directly addressing what was asked.
+RESPONSE STYLE REQUIREMENTS:
+- Be conversational but efficient 
+- Include ONLY minimal thinking that leads directly to your conclusion
+- Focus on facts from the data
+- If data is missing, briefly explain why it might be missing
+- DO NOT analyze the JSON structure or field names
+- DO NOT explain your reasoning process step-by-step
 
-For year-related questions about albums, respond like: "In 2016, the following albums were released: [Album1], [Album2], etc."
+If showing your thought process:
+- GOOD: "Looking at the 2016 releases, only Beyoncé's Lemonade appears in our database."
+- BAD: "First I'll check what albums were released in 2016. The query was searching for col1=2016, which is the release year column..."
 
-DO NOT use phrases like "Based on the data" or "According to the results."
-DO NOT explain SQL syntax or mention SQL commands.
-DO NOT reference JSON objects or formatting.
-DO NOT preface your answer with "To answer your question" or similar phrases.
+SPECIFIC CASE HANDLING:
+- For year queries with no results: Mention the database might not have complete records for that period
+- For "How many" queries: Provide the exact count and what was counted
+- For listing queries: Provide the items in a clear format
 
-Make your response sound natural and helpful, like you're having a conversation.
-`;
+Begin your response immediately with relevant information.`;
 
         const response = await openRouterClient.post('/chat/completions', {
             model: MODEL,
-            messages: [{ role: 'user', content: prompt }]
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a helpful music database assistant. Provide direct answers with minimal analysis. Focus on answering the question concisely.'
+                },
+                { role: 'user', content: prompt }
+            ],
+            temperature: 0.7
         });
 
         if (response?.data?.choices?.[0]?.message?.content) {
             return response.data.choices[0].message.content;
-        } else {
-            console.warn("Unexpected API response format:", JSON.stringify(response.data));
-
-            // Fallback for album year questions
-            if (question.toLowerCase().includes('album') &&
-                (question.toLowerCase().includes('2016') || question.match(/\b(19|20)\d{2}\b/))) {
-                return "In 2016, the albums released were: Formation, Master of Puppets, Bohemian Rhapsody, Brown Sugar, and Unknown Album.";
-            }
-
-            return "I found the following in the database.";
         }
+
+        // Fallback response
+        if (resultIsEmpty) {
+            if (question.toLowerCase().includes('2016')) {
+                return "I couldn't find any albums from 2016 in the database. Our records may be incomplete for this time period.";
+            }
+            return "I couldn't find any matching records in the database.";
+        }
+
+        return `I found ${result.rows.length} matching records.`;
     } catch (error) {
         console.error('OpenRouter API error:', error);
-
-        // Hard-coded fallback for common questions
-        if (question.toLowerCase().includes('album') && question.toLowerCase().includes('2016')) {
-            return "In 2016, the albums released were: Formation, Master of Puppets, Bohemian Rhapsody, Brown Sugar, and Unknown Album.";
-        }
-
-        return "I found the following in the database.";
+        return "I'm having trouble processing your request right now.";
     }
 };
-
-// Find or create a function that extracts SQL from the response
-function extractSQLFromResponse(responseText) {
-    // Add the new regex pattern to extract SQL between markers
-    const sqlRegex = /===SQL===\s*([\s\S]*?)\s*===ENDSQL===|```sql\s*([\s\S]*?)\s*```/;
-    const match = responseText.match(sqlRegex);
-
-    if (match) {
-        // Return the first capturing group that's not undefined
-        return (match[1] || match[2]).trim();
-    }
-
-    // Fallback - look for SQL statements starting with SELECT, UPDATE, etc.
-    const fallbackRegex = /(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)\s+[\s\S]+?;/i;
-    const fallbackMatch = responseText.match(fallbackRegex);
-
-    return fallbackMatch ? fallbackMatch[0].trim() : null;
-}
 
 // Default export for compatibility with any modules that import the entire file
 export default { generateSQL, generateAnswer, SCHEMA_MAPPING };

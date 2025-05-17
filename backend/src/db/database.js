@@ -5,20 +5,41 @@ const { Pool } = pg;
 import dotenv from 'dotenv';
 dotenv.config();
 
-// Use DATABASE_URL environment variable 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false  // Required for Render PostgreSQL
-  }
-});
+// Create database connection configuration
+let poolConfig;
+
+// Check if DATABASE_URL is provided (for production/deployed environment)
+if (process.env.DATABASE_URL) {
+    poolConfig = {
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? {
+            rejectUnauthorized: false // Only for production environments
+        } : false
+    };
+    console.log('Using DATABASE_URL for connection');
+}
+// Otherwise, use individual DB parameters (for local development)
+else {
+    poolConfig = {
+        host: process.env.DB_HOST || 'localhost',
+        port: process.env.DB_PORT || 5432,
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        ssl: process.env.DB_SSL === 'true'
+    };
+    console.log('Using individual DB parameters for connection');
+}
+
+// Create the connection pool with the determined configuration
+const pool = new Pool(poolConfig);
 
 // Test the connection
 pool.query('SELECT NOW()', (err, res) => {
     if (err) {
         console.error('Database connection error:', err);
     } else {
-        console.log('Connected to PostgreSQL database:', process.env.DB_NAME);
+        console.log('Connected to PostgreSQL database');
     }
 });
 
@@ -38,10 +59,10 @@ export const getActualTableNames = async () => {
     try {
         // Use executeInternalQuery to avoid recursion
         const tables = await executeInternalQuery(`
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_type = 'BASE TABLE'
-        `);
+      SELECT table_name FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_type = 'BASE TABLE'
+    `);
 
         return tables.map(t => t.table_name);
     } catch (err) {
@@ -54,11 +75,11 @@ export const getActualTableNames = async () => {
 export const getTableColumns = async (tableName) => {
     try {
         const columns = await executeInternalQuery(`
-            SELECT column_name, data_type
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-            AND table_name = $1
-        `, [tableName]);
+      SELECT column_name, data_type
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+      AND table_name = $1
+    `, [tableName]);
 
         return columns.map(c => c.column_name);
     } catch (err) {
@@ -81,10 +102,10 @@ export const verifyTableAndColumnExistence = async (sql) => {
 
         // Get actual table names from database USING INTERNAL QUERY
         const tables = await executeInternalQuery(`
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_type = 'BASE TABLE'
-        `);
+      SELECT table_name FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_type = 'BASE TABLE'
+    `);
 
         const actualTables = tables.map(t => t.table_name.toLowerCase());
 
@@ -102,21 +123,24 @@ export const verifyTableAndColumnExistence = async (sql) => {
     }
 };
 
-// Keep your regular query function the same, it will use verifyTableAndColumnExistence
-export const query = async (sql, params = []) => {
+// Update your query function to always return a properly structured result
+export const query = async (text, params = []) => {
     try {
-        // Verify tables exist
-        await verifyTableAndColumnExistence(sql);
+        const start = Date.now();
+        const res = await pool.query(text, params);
+        const duration = Date.now() - start;
 
-        // Then execute the query
-        const result = await pool.query(sql, params);
-        return result.rows;
-    } catch (err) {
-        console.error('Query error:', err.message);
-        console.error('Failed query:', sql);
-        throw err;
+        console.log('Executed query', { text, duration, rows: res.rowCount });
+        return res; // This should have a 'rows' property
+    } catch (error) {
+        console.error('Error executing query:', error.message);
+        // Return empty result instead of throwing
+        return { rows: [], rowCount: 0 };
     }
 };
+
+// Export the pool for use in other files
+export default pool;
 
 export const schemaInfo = {
     description: `

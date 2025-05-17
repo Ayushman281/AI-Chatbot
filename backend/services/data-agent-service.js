@@ -11,14 +11,23 @@ import config from '../config.js';
 // OpenRouter LLM Class implementation - using axios directly
 class OpenRouterLLM {
     constructor(options = {}) {
-        this.apiKey = options.apiKey || process.env.OPENROUTER_API_KEY || "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";
+        this.apiKey = options.apiKey || process.env.OPENROUTER_API_KEY;
         this.model = options.model || process.env.OPENROUTER_MODEL || "tngtech/deepseek-r1t-chimera:free";
         this.temperature = options.temperature ?? 0;
+
+        // Check if API key is present
+        if (!this.apiKey) {
+            logger.error('OpenRouter API key is missing');
+            throw new Error('OpenRouter API key is required');
+        }
+
         this.client = axios.create({
             baseURL: 'https://openrouter.ai/api/v1',
             headers: {
                 'Authorization': `Bearer ${this.apiKey}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'HTTP-Referer': process.env.APPLICATION_URL || 'https://ai-chatbot-five-flame.vercel.app',
+                'X-Title': 'AI Data Agent'
             }
         });
     }
@@ -30,14 +39,24 @@ class OpenRouterLLM {
                 messages: [{ role: 'user', content: prompt }],
                 temperature: this.temperature
             });
-            return response.data.choices[0].message.content;
+
+            if (response.data?.choices?.[0]?.message?.content) {
+                return response.data.choices[0].message.content;
+            } else {
+                logger.warn('Unexpected API response format:', response.data);
+                return 'I encountered an issue processing your request.';
+            }
         } catch (error) {
-            console.error("OpenRouter API error:", error);
+            if (error.response?.status === 429) {
+                logger.error("OpenRouter API rate limit exceeded:", error.response.data);
+                return "I'm currently experiencing high demand. Please try again in a few moments.";
+            }
+
+            logger.error("OpenRouter API error:", error.message);
             throw new Error(`OpenRouter API call failed: ${error.message}`);
         }
     }
 
-    // For compatibility with LangChain
     async invoke(input) {
         try {
             const messages = Array.isArray(input) ? input : [{ role: 'user', content: input }];
@@ -46,11 +65,22 @@ class OpenRouterLLM {
                 messages: messages,
                 temperature: this.temperature
             });
-            return {
-                content: response.data.choices[0].message.content
-            };
+
+            if (response.data?.choices?.[0]?.message?.content) {
+                return {
+                    content: response.data.choices[0].message.content
+                };
+            } else {
+                logger.warn('Unexpected API response format:', response.data);
+                return { content: 'I encountered an issue processing your request.' };
+            }
         } catch (error) {
-            console.error("OpenRouter API error:", error);
+            if (error.response?.status === 429) {
+                logger.error("OpenRouter API rate limit exceeded:", error.response.data);
+                return { content: "I'm currently experiencing high demand. Please try again in a few moments." };
+            }
+
+            logger.error("OpenRouter API error:", error.message);
             throw new Error(`OpenRouter API call failed: ${error.message}`);
         }
     }
@@ -61,7 +91,7 @@ class DataAgent {
         // Replace ChatOllama with OpenRouterLLM
         this.llm = new OpenRouterLLM({
             apiKey: process.env.OPENROUTER_API_KEY,
-            model: process.env.OPENROUTER_MODEL || "deepseek-ai/deepseek-r1t-chimera",
+            model: process.env.OPENROUTER_MODEL || "tngtech/deepseek-r1t-chimera:free",
             temperature: 0
         });
 
@@ -107,6 +137,38 @@ class DataAgent {
                 }
             }
         };
+    }
+
+    // Add missing methods that were referenced but not defined
+    inferTableDescription(tableName) {
+        const tableDescriptions = {
+            'albm': 'Contains information about music albums including title and release year',
+            'trk': 'Contains information about music tracks including title, composer, and price',
+            'artist': 'Contains information about music artists including name and country',
+            'genre': 'Contains music genre classifications',
+            'customer': 'Contains customer information including name and representative',
+            'invoice': 'Contains invoice header information including date and total amount',
+            'inv_line': 'Contains invoice line items with track information'
+        };
+
+        return tableDescriptions[tableName] || `Table containing ${tableName} data`;
+    }
+
+    inferColumnDescription(tableName, columnName) {
+        const key = `${tableName}.${columnName}`;
+        const columnDescriptions = {
+            'albm.AlbumId': 'Primary key for album records',
+            'albm.ttle': 'Album title',
+            'albm.a_id': 'Foreign key referencing the artist',
+            'albm.col1': 'Year when the album was released',
+            'trk.TrackNo': 'Primary key for track records',
+            'trk.TrackTitle': 'Name of the music track',
+            'trk.cost': 'Price of the track in currency units',
+            'artist.NM': 'Name of the artist',
+            'artist.ArtistIdentifier': 'Primary key for artist records'
+        };
+
+        return columnDescriptions[key] || `${columnName} field for ${tableName}`;
     }
 
     async initialize() {
@@ -229,7 +291,8 @@ class DataAgent {
                         }
                     });
                     documents.push(viewDoc);
-                });
+                }
+                );
             }
 
             this.schemaIndex = await MemoryVectorStore.fromDocuments(
