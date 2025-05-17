@@ -11,7 +11,7 @@ import config from '../config.js';
 // OpenRouter LLM Class implementation - using axios directly
 class OpenRouterLLM {
     constructor(options = {}) {
-        this.apiKey = options.apiKey || process.env.OPENROUTER_API_KEY || "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";
+        this.apiKey = options.apiKey || process.env.OPENROUTER_API_KEY || "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";
         this.model = options.model || process.env.OPENROUTER_MODEL || "tngtech/deepseek-r1t-chimera:free";
         this.temperature = options.temperature ?? 0;
         this.client = axios.create({
@@ -248,10 +248,6 @@ class DataAgent {
         try {
             logger.info(`Generating SQL for question: "${question}"`);
 
-            const schemaDetails = await this.getRelevantSchemaDetails(schemaContext);
-
-            const messySchemaDesc = this.getMessySchemaDescription();
-
             const sqlGenerationPrompt = new PromptTemplate({
                 template: `
 You are an expert SQL developer working with a PostgreSQL database that has a DELIBERATELY MESSY schema.
@@ -264,25 +260,23 @@ DATABASE SCHEMA:
 
 IMPORTANT RULES:
 1. ALWAYS use the exact table and column names from the schema above.
-2. NEVER use standard names like "album" or "track" in SQL.
-3. For release year in albums, ALWAYS use "col1" column in "albm" table.
-4. For album titles, ALWAYS use "ttle" column.
+2. For albums released in a specific year, ALWAYS use "col1" column in the "albm" table.
+3. Return column aliases to make results more readable (e.g., "ttle AS album_title").
 
 EXAMPLES:
 Q: What album was released in 2016?
 A: SELECT ttle AS album_title FROM albm WHERE col1 = 2016;
 
 Q: List all tracks that cost more than 1.00
-A: SELECT TrackTitle FROM trk WHERE cost > 1.00;
+A: SELECT TrackTitle AS track_name, cost AS price FROM trk WHERE cost > 1.00;
 
 Q: Which artists have albums released in 2016?
 A: SELECT a.NM AS artist_name, b.ttle AS album_title FROM artist a JOIN albm b ON a.ArtistIdentifier = b.a_id WHERE b.col1 = 2016;
 
 USER QUESTION: {question}
 
-Return ONLY the SQL query, no explanation or markdown.
-`,
-                inputVariables: ['question', 'conversationHistory']
+Return ONLY the SQL query, no explanation or markdown.`,
+                inputVariables: ['question']
             });
 
             const sqlChain = RunnableSequence.from([
