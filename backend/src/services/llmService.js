@@ -131,6 +131,177 @@ COMMON NAMING ISSUES:
 `;
 };
 
+// Find where you build the schema context for the LLM
+const schemaContext = `
+IMPORTANT: THESE ARE THE EXACT TABLE AND COLUMN NAMES - DO NOT ABBREVIATE THEM FURTHER:
+
+1. "invoice" table (NOT "invvc"):
+   - invoice_num (primary key)
+   - customerID (references customer.cust_id)
+   - date_of_invoice
+   - TotalAmount
+
+2. "inv_line" table (NOT "invvc_line"):
+   - LineID (primary key)
+   - invoice_num (references invoice.invoice_num)
+   - TrackNo (references trk.TrackNo)
+
+3. "customer" table (NOT "cstmr"):
+   - cust_id (primary key)
+   - F_NAME
+   - L_NAME
+
+4. "trk" table:
+   - TrackNo (primary key)
+   - TrackTitle (NOT "nme")
+   - cost (NOT "prc")
+   
+5. "albm" table:
+   - AlbumId (primary key)
+   - ttle (album title, NOT "title")
+   - a_id (references artist.ArtistIdentifier)
+   - col1 (release year as integer)
+   
+6. "artist" table:
+   - ArtistIdentifier (primary key)
+   - NM (artist name)
+`;
+
+// Add this complete schema context
+const completeSchemaContext = `
+You are a SQL expert working with a DELIBERATELY MESSY database schema for a music store. 
+The database has inconsistent naming conventions and abbreviations.
+
+COMPLETE SCHEMA DEFINITION:
+
+Tables and their columns:
+
+1. "genre" table:
+   - id (INT, PRIMARY KEY)
+   - genre_type (VARCHAR)
+   - col4 (VARCHAR)
+
+2. "media_type" table:
+   - TypeID (INT, PRIMARY KEY)
+   - type_desc (VARCHAR)
+   - col5 (BOOLEAN)
+
+3. "artist" table:
+   - ArtistIdentifier (INT, PRIMARY KEY)
+   - NM (VARCHAR) - This is the artist name
+   - ctry (VARCHAR) - This is country
+   - col2 (VARCHAR)
+
+4. "employe" table:
+   - EmpID (INT, PRIMARY KEY)
+   - surname (VARCHAR)
+   - given_name (VARCHAR)
+   - JobTitle (VARCHAR)
+   - manager_id (INT, FOREIGN KEY to employe.EmpID) - Self-reference
+   - DOB (TIMESTAMP)
+   - StartDate (TIMESTAMP)
+   - location (VARCHAR)
+   - municipality (VARCHAR)
+   - province (VARCHAR)
+   - nation (VARCHAR)
+   - post_code (VARCHAR)
+   - telephone (VARCHAR)
+   - facsimile (VARCHAR)
+   - electronic_mail (VARCHAR)
+   - col3 (NUMERIC)
+
+5. "albm" table:
+   - AlbumId (INT, PRIMARY KEY)
+   - ttle (VARCHAR) - This is the album title
+   - a_id (INT, FOREIGN KEY to artist.ArtistIdentifier)
+   - col1 (INT) - This is release year
+
+6. "customer" table:
+   - cust_id (INT, PRIMARY KEY)
+   - F_NAME (VARCHAR) - First name
+   - L_NAME (VARCHAR) - Last name
+   - COMPANY (VARCHAR)
+   - addr (VARCHAR)
+   - CITY (VARCHAR)
+   - st (VARCHAR) - State
+   - Country (VARCHAR)
+   - ZIP (VARCHAR)
+   - PhoneNum (VARCHAR)
+   - fax_number (VARCHAR)
+   - EmailAddress (VARCHAR)
+   - SupportRepresentativeID (INT, FOREIGN KEY to employe.EmpID)
+   - c_data (TEXT)
+
+7. "trk" table:
+   - TrackNo (INT, PRIMARY KEY)
+   - TrackTitle (VARCHAR)
+   - AlbmID (INT, FOREIGN KEY to albm.AlbumId)
+   - MediaTypeIdentifier (INT, FOREIGN KEY to media_type.TypeID)
+   - GenreID (INT, FOREIGN KEY to genre.id)
+   - written_by (VARCHAR) - Composer
+   - length_ms (INT) - Duration in milliseconds
+   - size_bytes (INT)
+   - cost (NUMERIC) - Price
+   - col7 (INT)
+   - rlse_yr (INT) - Release year
+
+8. "invoice" table:
+   - invoice_num (INT, PRIMARY KEY)
+   - customerID (INT, FOREIGN KEY to customer.cust_id)
+   - date_of_invoice (TIMESTAMP) - Invoice date
+   - bill_addr (VARCHAR)
+   - bill_city (VARCHAR)
+   - bill_state (VARCHAR)
+   - bill_country (VARCHAR)
+   - bill_zip (VARCHAR)
+   - TotalAmount (NUMERIC)
+   - paymntstatus (VARCHAR)
+
+9. "inv_line" table:
+   - ID (INT, PRIMARY KEY)
+   - inv_id (INT, FOREIGN KEY to invoice.invoice_num)
+   - TrackIdentifier (INT, FOREIGN KEY to trk.TrackNo)
+   - price (NUMERIC)
+   - qty (INT) - Quantity
+   - dscnt (NUMERIC) - Discount
+
+10. "playlist" table:
+    - list_id (INT, PRIMARY KEY)
+    - description (VARCHAR)
+    - createdby (INT)
+    - col6 (TIMESTAMP) - Created date
+    - numeric_albums (VARCHAR)
+
+11. "playlist_track" table:
+    - pl_id (INT, FOREIGN KEY to playlist.list_id, part of composite PRIMARY KEY)
+    - t_id (INT, FOREIGN KEY to trk.TrackNo, part of composite PRIMARY KEY)
+    - ordr (INT) - Order in playlist
+
+KEY RELATIONSHIPS:
+- Albums belong to artists: albm.a_id → artist.ArtistIdentifier
+- Tracks belong to albums: trk.AlbmID → albm.AlbumId
+- Tracks have genres: trk.GenreID → genre.id
+- Tracks have media types: trk.MediaTypeIdentifier → media_type.TypeID
+- Invoices belong to customers: invoice.customerID → customer.cust_id
+- Invoice lines belong to invoices: inv_line.inv_id → invoice.invoice_num
+- Invoice lines reference tracks: inv_line.TrackIdentifier → trk.TrackNo
+- Customers have support representatives: customer.SupportRepresentativeID → employe.EmpID
+- Employees have managers: employe.manager_id → employe.EmpID
+- Playlist tracks link playlists and tracks: playlist_track.pl_id → playlist.list_id, playlist_track.t_id → trk.TrackNo
+
+GUIDELINES:
+- Always use the EXACT table and column names shown above
+- Do NOT abbreviate names beyond what's already shown (e.g., "albm" is already abbreviated and should NOT be further shortened)
+- Column names are case-sensitive and sometimes inconsistent (e.g., "ttle" for title, "NM" for name)
+- For common queries:
+  - To get artist data, use the "artist" table with column "NM"
+  - To get album data, use the "albm" table with column "ttle"
+  - To get track data, use the "trk" table with column "TrackTitle"
+  - To get track pricing, use "trk.cost"
+  - To count albums per artist, join "albm" and "artist" tables on "a_id" and "ArtistIdentifier"
+  - For customer purchases, link "customer", "invoice", "inv_line", and "trk" tables
+`;
+
 function standardizeQuestion(question) {
     // Create a more detailed question with explicit terms
     return `I want to query a database with these details:
@@ -232,125 +403,49 @@ Return ONLY a JSON object with this format:
 `;
 };
 
-export const generateSQL = async (question, schemaInfo) => {
+export const generateSQL = async (question, additionalContext = '') => {
     try {
-        // First pass - generate initial SQL
-        const initialPrompt = generatePrompt(question, schemaInfo);
+        console.log(`Processing question: "${question}"`);
+
+        const prompt = `
+${completeSchemaContext}
+
+${additionalContext ? additionalContext + '\n\n' : ''}
+
+QUESTION: "${question}"
+
+IMPORTANT: Return your SQL query in the following format:
+===SQL===
+SELECT columns FROM table WHERE conditions;
+===ENDSQL===
+
+Explain your reasoning before or after the SQL block, but ensure the SQL is contained within these markers.
+`;
+
+        const messages = [{ role: "user", content: prompt }];
 
         const initialResponse = await openRouterClient.post('/chat/completions', {
             model: MODEL,
-            messages: [{ role: 'user', content: initialPrompt }]
+            messages: messages
         });
 
-        // Extract initial SQL from response
         const content = initialResponse.data.choices[0].message.content;
         console.log("Raw OpenRouter response:", content.substring(0, 200) + "...");
 
         let sqlQuery;
         let chartType = "table";
 
-        // Try to extract SQL from the initial response
         try {
-            // Attempt different extraction methods
-            let jsonData;
-
-            // Method 1: Direct JSON parse if the response is clean JSON
-            try {
-                jsonData = JSON.parse(content);
-                console.log("Parsed using direct JSON parse");
-                sqlQuery = jsonData.sql;
-                chartType = jsonData.chartType || "table";
-            } catch (e) {
-                // Method 2: Extract JSON block with regex
-                const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) ||
-                    content.match(/```\s*([\s\S]*?)\s*```/) ||
-                    content.match(/{[\s\S]*?}/);
-
-                if (jsonMatch) {
-                    try {
-                        const jsonStr = jsonMatch[1] || jsonMatch[0];
-                        jsonData = JSON.parse(jsonStr.replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2": '));
-                        console.log("Parsed using regex extraction");
-                        sqlQuery = jsonData.sql;
-                        chartType = jsonData.chartType || "table";
-                    } catch (e2) {
-                        throw new Error("Failed to parse extracted JSON: " + e2.message);
-                    }
-                } else {
-                    // Method 3: Try to extract direct SQL
-                    const sqlMatch = content.match(/```sql\s*([\s\S]*?)\s*```/) ||
-                        content.match(/SELECT[\s\S]*?;/i);
-
-                    if (sqlMatch) {
-                        sqlQuery = sqlMatch[0].replace(/```sql|```/g, '').trim();
-                        console.log("Extracted SQL directly from response");
-                    } else {
-                        throw new Error("Could not extract SQL from response");
-                    }
-                }
+            sqlQuery = extractSQLFromResponse(content);
+            if (sqlQuery) {
+                console.log("Extracted SQL using markers or fallback");
+            } else {
+                throw new Error("Could not extract SQL");
             }
         } catch (parseError) {
             console.error('Failed to parse initial response:', parseError);
-            // If we couldn't extract SQL, use a fallback
-            sqlQuery = `SELECT * FROM albm LIMIT 10;`;
+            sqlQuery = `SELECT * FROM trk LIMIT 10;`;
         }
-
-        // Second pass - verify and fix schema errors
-        if (sqlQuery) {
-            const verificationPrompt = `
-I generated this SQL for the question "${question}":
-${sqlQuery}
-
-VERIFY for schema errors against our MESSY database:
-${buildSchemaDescription()}
-
-FIX ANY ERRORS, especially:
-1. Table names (e.g., use "albm" not "album")
-2. Column names (e.g., use "ttle" not "title")
-3. Join conditions (e.g., use "AlbmID" not "AlbumId")
-4. Date functions (use PostgreSQL EXTRACT() syntax)
-
-Return ONLY the corrected SQL without any explanations.
-`;
-
-            try {
-                const correctionResponse = await openRouterClient.post('/chat/completions', {
-                    model: MODEL,
-                    messages: [{ role: 'user', content: verificationPrompt }]
-                });
-
-                const correctedContent = correctionResponse.data.choices[0].message.content;
-
-                // Extract SQL from correction
-                const correctedSqlMatch = correctedContent.match(/```sql\s*([\s\S]*?)\s*```/) ||
-                    correctedContent.match(/SELECT[\s\S]*?;/i) ||
-                    correctedContent;
-
-                if (correctedSqlMatch) {
-                    sqlQuery = correctedSqlMatch[0].replace(/```sql|```/g, '').trim();
-                }
-            } catch (correctionError) {
-                console.error('Error during SQL correction:', correctionError);
-                // Continue with the uncorrected SQL
-            }
-        }
-
-        // Apply final manual fixes
-        sqlQuery = sqlQuery
-            .replace(/\balbums\b/g, "albm")
-            .replace(/\btracks\b/g, "trk")
-            .replace(/\btitle\b/g, "ttle")
-            .replace(/\bAlbumID\b/g, "AlbmID")
-            .replace(/\bTrackID\b/g, "TrackNo")
-            .replace(/\bArtistId\b/g, "ArtistIdentifier")
-            .replace(/\bFirstName\b/g, "F_NAME")
-            .replace(/\bLastName\b/g, "L_NAME")
-            .replace(/\bCustomerId\b/g, "cust_id")
-            .replace(/\bInvoiceId\b/g, "invoice_num")
-            .replace(/\bInvoiceDate\b/g, "date_of_invoice")
-            .replace(/\bYEAR\(/gi, "EXTRACT(YEAR FROM ")
-            .replace(/WHERE\s+([\w\.]+)\s*=\s*["'](\d+)["']/gi, "WHERE $1 = $2")
-            .replace(/["'](\d+)["']/g, "$1");
 
         console.log("Final SQL query:", sqlQuery);
 
@@ -360,46 +455,10 @@ Return ONLY the corrected SQL without any explanations.
         };
     } catch (error) {
         console.error('OpenRouter API error:', error);
-
-        // Implement robust fallback with alternative queries
-        try {
-            // Try a simplified approach based on keywords
-            const keywords = question.toLowerCase();
-            let fallbackSql;
-            let fallbackChart = "table";
-
-            if (keywords.includes("album") && keywords.includes("2016")) {
-                fallbackSql = "SELECT * FROM albm WHERE col1 = 2016";
-                fallbackChart = "table";
-            } else if (keywords.includes("expensive") && keywords.includes("track")) {
-                fallbackSql = "SELECT TrackTitle, cost FROM trk ORDER BY cost DESC LIMIT 5";
-                fallbackChart = "bar";
-            } else if (keywords.includes("invoice") && keywords.includes("2023")) {
-                fallbackSql = `SELECT i.invoice_num, c.F_NAME || ' ' || c.L_NAME AS customer_name, i.TotalAmount 
-                              FROM invoice i JOIN customer c ON i.customerID = c.cust_id 
-                              WHERE EXTRACT(YEAR FROM i.date_of_invoice) = 2023`;
-                fallbackChart = "table";
-            } else if (keywords.includes("artist") || keywords.includes("artist")) {
-                fallbackSql = "SELECT * FROM artist LIMIT 10";
-                fallbackChart = "table";
-            } else {
-                fallbackSql = "SELECT * FROM albm LIMIT 5";
-                fallbackChart = "table";
-            }
-
-            console.log("Using fallback SQL:", fallbackSql);
-            return {
-                sql: fallbackSql,
-                chartType: fallbackChart
-            };
-        } catch (fallbackError) {
-            console.error('Even fallback failed:', fallbackError);
-            // Ultimate fallback
-            return {
-                sql: "SELECT * FROM albm LIMIT 5",
-                chartType: "table"
-            };
-        }
+        return {
+            sql: "SELECT * FROM trk LIMIT 5",
+            chartType: "table"
+        };
     }
 };
 
@@ -440,6 +499,24 @@ Make your response sound natural and helpful, as if you're having a conversation
         return "Here are the results of your query.";
     }
 };
+
+// Find or create a function that extracts SQL from the response
+function extractSQLFromResponse(responseText) {
+    // Add the new regex pattern to extract SQL between markers
+    const sqlRegex = /===SQL===\s*([\s\S]*?)\s*===ENDSQL===|```sql\s*([\s\S]*?)\s*```/;
+    const match = responseText.match(sqlRegex);
+
+    if (match) {
+        // Return the first capturing group that's not undefined
+        return (match[1] || match[2]).trim();
+    }
+
+    // Fallback - look for SQL statements starting with SELECT, UPDATE, etc.
+    const fallbackRegex = /(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)\s+[\s\S]+?;/i;
+    const fallbackMatch = responseText.match(fallbackRegex);
+
+    return fallbackMatch ? fallbackMatch[0].trim() : null;
+}
 
 // Default export for compatibility with any modules that import the entire file
 export default { generateSQL, generateAnswer, SCHEMA_MAPPING };

@@ -85,6 +85,7 @@ Desktop.ini
 *.temp
 .cache
 *.local
+unused
 
 #-----------------------------------------------
 # Large Model Files & Data

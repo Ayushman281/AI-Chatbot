@@ -191,17 +191,17 @@ class DatabaseService {
     detectPossibleMisspellings(schema, tableName, columns) {
         // Common column name patterns to recognize
         const columnPatterns = {
-            id: /^.*id$/i,
-            name: /^n[a-z]{0,2}m[a-z]{0,1}$/i, // Catches name, nm, nme etc.
-            title: /^t[a-z]{0,2}t[a-z]{0,2}l[a-z]{0,1}$/i, // Catches title, ttl, etc.
-            price: /^pr[a-z]{0,3}c[a-z]{0,1}$/i, // price, prc, etc.
-            date: /^.*date$/i,
-            description: /^desc.*$/i,
-            quantity: /^qt[a-z]*$/i,
-            address: /^addr.*$/i,
-            email: /^e*mail.*$/i,
-            phone: /^ph[a-z]*$/i,
-            col1: /^col\d+$/i // Generic column names
+            id: /.*id$/i,
+            name: /n[a-z]{0,2}m[a-z]{0,1}$/i,  // Catches name, nm, nme etc.
+            title: /t[a-z]{0,2}t[a-z]{0,2}l[a-z]{0,1}$/i,  // Catches title, ttl, etc.
+            price: /pr[a-z]{0,3}c[a-z]{0,1}$/i,  // price, prc, etc.
+            date: /.*date$/i,
+            description: /desc.*$/i,
+            quantity: /qt[a-z]*$/i,
+            address: /addr.*$/i,
+            email: /e*mail.*$/i,
+            phone: /ph[a-z]*$/i,
+            col1: /col\d+$/i // Generic column names
         };
 
         const misspellings = {};
@@ -222,12 +222,59 @@ class DatabaseService {
         return misspellings;
     }
 
+    // New validation method
+    validateSQL(sql) {
+        // Check if the SQL starts with a valid SQL command
+        const validCommands = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'WITH'];
+        const firstWord = sql.trim().split(/\s+/)[0].toUpperCase();
+
+        if (!validCommands.includes(firstWord)) {
+            throw new Error('Invalid SQL query: Does not begin with a recognized SQL command');
+        }
+
+        // Additional checks can be added here
+        return true;
+    }
+
+    // New method to verify tables and columns
+    async verifyTableAndColumnExistence(sql) {
+        // Extract table names from SQL (basic regex approach)
+        const tableRegex = /\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gi;
+        const matches = [...sql.matchAll(tableRegex)];
+        const tableNames = matches.map(match => match[1].toLowerCase());
+
+        // Get actual table names from database
+        const [tables] = await this.sequelize.query(`
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_type = 'BASE TABLE'
+      `);
+
+        const actualTables = tables.map(t => t.table_name.toLowerCase());
+
+        // Check if all referenced tables exist
+        const missingTables = tableNames.filter(t => !actualTables.includes(t));
+
+        if (missingTables.length > 0) {
+            throw new Error(`Tables do not exist: ${missingTables.join(', ')}`);
+        }
+
+        return true;
+    }
+
+    // Updated executeQuery method with validation
     async executeQuery(query, params = []) {
         if (!this.isConnected) {
             await this.connect();
         }
 
         try {
+            // Validate SQL syntax
+            this.validateSQL(query);
+
+            // Verify tables exist
+            await this.verifyTableAndColumnExistence(query);
+
             const [results] = await this.sequelize.query(query, {
                 replacements: params,
                 type: this.sequelize.QueryTypes.SELECT
