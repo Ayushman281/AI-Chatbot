@@ -1,4 +1,4 @@
-import { ChatOllama } from "@langchain/community/chat_models/ollama";
+import axios from 'axios';
 import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/hf";
 import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { Document } from 'langchain/document';
@@ -8,11 +8,60 @@ import databaseService from './database-service.js';
 import logger from '../utils/logger.js';
 import config from '../config.js';
 
+// OpenRouter LLM Class implementation - using axios directly
+class OpenRouterLLM {
+    constructor(options = {}) {
+        this.apiKey = options.apiKey || process.env.OPENROUTER_API_KEY || "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";
+        this.model = options.model || process.env.OPENROUTER_MODEL || "tngtech/deepseek-r1t-chimera:free";
+        this.temperature = options.temperature ?? 0;
+        this.client = axios.create({
+            baseURL: 'https://openrouter.ai/api/v1',
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json'
+            }
+        });
+    }
+
+    async call(prompt) {
+        try {
+            const response = await this.client.post('/chat/completions', {
+                model: this.model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: this.temperature
+            });
+            return response.data.choices[0].message.content;
+        } catch (error) {
+            console.error("OpenRouter API error:", error);
+            throw new Error(`OpenRouter API call failed: ${error.message}`);
+        }
+    }
+
+    // For compatibility with LangChain
+    async invoke(input) {
+        try {
+            const messages = Array.isArray(input) ? input : [{ role: 'user', content: input }];
+            const response = await this.client.post('/chat/completions', {
+                model: this.model,
+                messages: messages,
+                temperature: this.temperature
+            });
+            return {
+                content: response.data.choices[0].message.content
+            };
+        } catch (error) {
+            console.error("OpenRouter API error:", error);
+            throw new Error(`OpenRouter API call failed: ${error.message}`);
+        }
+    }
+}
+
 class DataAgent {
     constructor() {
-        this.llm = new ChatOllama({
-            baseUrl: config.ai.ollamaBaseUrl || "http://localhost:11434",
-            model: config.ai.ollamaModel || "llama2",
+        // Replace ChatOllama with OpenRouterLLM
+        this.llm = new OpenRouterLLM({
+            apiKey: process.env.OPENROUTER_API_KEY,
+            model: process.env.OPENROUTER_MODEL || "deepseek-ai/deepseek-r1t-chimera",
             temperature: 0
         });
 
@@ -25,7 +74,7 @@ class DataAgent {
         this.schemaIndex = null;
         this.initialized = false;
 
-        // Add schema mapping for messy database
+        // Add schema mapping for messy database (keep this unchanged)
         this.messySchemaMapping = {
             tables: {
                 "album": "albm",
@@ -330,7 +379,7 @@ Tables:
         try {
             const responsePrompt = new PromptTemplate({
                 template: `
-You are an expert data analyst explaining query results to a business user.
+You are a helpful data analyst explaining query results in a natural, conversational way.
 
 IMPORTANT: The database uses messy table and column names:
 - "albm" means "album"
@@ -347,14 +396,19 @@ SQL QUERY USED:
 QUERY RESULTS (showing {resultCount} rows):
 {results}
 
-Based on the user's question and the query results, provide a clear and comprehensive answer.
-Your response should:
-1. Directly answer the question in natural language
-2. Translate messy database terms to proper English (e.g., say "albums" not "albms")
-3. Highlight key insights from the data
-4. Mention any limitations (e.g., "only showing top 10 results")
+Respond in a natural, conversational manner. Start by directly answering the user's question.
+For example, if asked about albums in 2016, begin with "In 2016, [album name] was released."
 
-Keep your tone professional but conversational.
+Translate messy database terms to proper English (e.g., say "albums" not "albms").
+Highlight key insights from the data.
+Mention any limitations (e.g., "only showing top 10 results").
+
+DO NOT use phrases like "Based on the data" or "According to the results."
+DO NOT explain SQL syntax or mention SQL commands.
+DO NOT reference JSON objects or formatting.
+DO NOT preface your answer with "To answer your question" or similar phrases.
+
+Make your response sound natural and helpful, as if you're having a conversation.
 `,
                 inputVariables: ['question', 'sql', 'results', 'resultCount']
             });

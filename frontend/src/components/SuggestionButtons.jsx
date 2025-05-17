@@ -3,21 +3,24 @@ import { Box, Paper, Typography } from '@mui/material';
 
 export default function SuggestionButtons({ onSelectSuggestion }) {
   const suggestions = [
+    // Simple Questions
     {
-      title: 'Top 10 artists by revenue',
-      description: 'Show highest earning musicians',
+      title: "What album was released in 2016?",
+      description: "Simple query for album by year",
     },
     {
-      title: 'Monthly streaming trends',
-      description: 'Analyze music streaming patterns',
+      title: "List the most expensive tracks",
+      description: "Show tracks ordered by price",
+    },
+
+    // Medium Questions
+    {
+      title: "List tracks with prices higher than $1.00 and their albums",
+      description: "Join tracks with their albums",
     },
     {
-      title: 'Genre performance analysis',
-      description: 'Compare popularity across genres',
-    },
-    {
-      title: 'Album sales distribution',
-      description: 'View sales across different formats',
+      title: "Compare track lengths across different genres",
+      description: "Aggregation by genre with averages",
     }
   ];
 

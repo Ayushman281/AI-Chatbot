@@ -7,11 +7,11 @@ import compression from 'compression';
 import dotenv from 'dotenv';
 import agentRoutes from './src/routes/agentRoutes.js';
 import logger from './utils/logger.js';
+import axios from 'axios';
 
 dotenv.config();
 console.log("Environment variables loaded:");
-console.log(`- Ollama URL: ${process.env.OLLAMA_BASE_URL}`);
-console.log(`- Ollama Model: ${process.env.OLLAMA_MODEL}`);
+console.log(`- DeepSeek Model: ${process.env.OPENROUTER_MODEL}`);
 console.log(`- DB Host: ${process.env.DB_HOST}`);
 console.log(`- DB User: ${process.env.DB_USER}`);
 
@@ -39,8 +39,47 @@ app.get('/test', (req, res) => {
     res.json({ status: 'Server is running!' });
 });
 
+// Simple test endpoint that doesn't require OpenRouter
+app.get('/test-model', (req, res) => {
+    res.json({
+        status: 'success',
+        message: 'Server is running correctly',
+        dbConnected: true,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// OpenRouter test endpoint
+app.get('/api/test-model', async (req, res) => {
+    try {
+        // Use your hardcoded API key from the previous fix
+        const API_KEY = "YOUR_OPENROUTER_API_KEY_HERE"; // Replace with actual key
+
+        const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+            model: "tngtech/deepseek-r1t-chimera:free",
+            messages: [{ role: 'user', content: 'Say hello' }]
+        }, {
+            headers: {
+                'Authorization': `Bearer ${API_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        res.json({
+            status: 'success',
+            response: response.data.choices[0].message.content
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: error.message,
+            details: error.response?.data
+        });
+    }
+});
+
 // Routes
-app.use('/api', agentRoutes);  // This maps /api/ask to the handleAgentQuery controller
+app.use('/api', agentRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
