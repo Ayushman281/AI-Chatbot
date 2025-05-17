@@ -76,7 +76,7 @@ function App() {
                     fontSize: '0.95rem',
                     fontStyle: 'italic'
                   }}>
-                    Try asking about sales trends, customer data, or product performance.
+                    Try asking about music sales, customer purchases, track prices, album details, artist statistics, or playlist activity
                   </Box>
                 </Box>
 
