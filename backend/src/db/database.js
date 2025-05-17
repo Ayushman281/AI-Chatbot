@@ -1,24 +1,18 @@
 // database.js for PostgreSQL with Chinook database
 
-import { Pool } from 'pg';
+import pg from 'pg';
+const { Pool } = pg;
 import dotenv from 'dotenv';
 dotenv.config();
 
-// PostgreSQL connection configuration
-const config = {
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    host: process.env.DB_HOST,
-    database: process.env.DB_NAME,
-    port: parseInt(process.env.DB_PORT, 10) || 5432,
-    // For SSL, if needed (e.g. for production)
-    // ssl: {
-    //   rejectUnauthorized: false
-    // }
-};
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false  // Required for Render PostgreSQL
+    }
+});
 
-// Create connection pool
-const pool = new Pool(config);
+export default pool;
 
 // Test the connection
 pool.query('SELECT NOW()', (err, res) => {
