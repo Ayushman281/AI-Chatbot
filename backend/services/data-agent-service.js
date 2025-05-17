@@ -254,36 +254,30 @@ class DataAgent {
 
             const sqlGenerationPrompt = new PromptTemplate({
                 template: `
-You are an expert SQL developer working with a PostgreSQL database that has a DELIBERATELY MESSY schema with issues like:
-- Non-standard table and column names
-- Generic column names like "col1" 
-- Tables with non-intuitive names like "albm" instead of "album"
+You are an expert SQL developer working with a PostgreSQL database that has a DELIBERATELY MESSY schema.
 
-${messySchemaDesc}
+DATABASE SCHEMA:
+- "albm" (album): AlbumId (PK), ttle (title), a_id (artist ID), col1 (release year)
+- "trk" (track): TrackNo (PK), TrackTitle, AlbmID, GenreID, cost, rlse_yr (release year)
+- "artist": ArtistIdentifier (PK), NM (name), ctry (country)
+- "genre": id (PK), genre_type
 
-CONVERSATION HISTORY:
-{conversationHistory}
+RULES:
+- "album" → "albm" table, "release year" → "col1" in "albm", "track" → "trk", "price" → "cost"
+- For albums released in a year: SELECT * FROM albm WHERE col1 = YEAR;
+- For tracks: SELECT * FROM trk WHERE ...
+- Never use standard names like "album" or "release_year" in SQL.
+
+EXAMPLES:
+Q: What album was released in 2016?
+A: SELECT * FROM albm WHERE col1 = 2016;
+
+Q: List all tracks that cost more than 1.00
+A: SELECT * FROM trk WHERE cost > 1.00;
 
 USER QUESTION: {question}
 
-Your task is to write a PostgreSQL SQL query that correctly answers the user's question.
-
-Rules:
-1. ALWAYS use the exact table and column names from the messy schema description
-2. When translating standard terms to messy schema:
-   - "album" → "albm" table
-   - "track" → "trk" table
-   - "employee" → "employe" table
-   - "invoice line" → "inv_line" table
-   - "album title" → albm.ttle
-   - "artist name" → artist.NM
-   - "release year" → albm.col1 or trk.rlse_yr
-   - "track title" → trk.TrackTitle
-3. Include appropriate JOINs as needed
-4. Order and group results as appropriate for the question
-5. Limit results to a reasonable number if returning many rows
-
-Return ONLY the SQL query without any explanation or markdown formatting.
+Return ONLY the SQL query, no explanation or markdown.
 `,
                 inputVariables: ['question', 'conversationHistory']
             });
@@ -413,34 +407,35 @@ Make your response sound natural and helpful, as if you're having a conversation
                 inputVariables: ['question', 'sql', 'results', 'resultCount']
             });
 
-            const limitedResults = results.slice(0, 10);
-
             const responseChain = RunnableSequence.from([
                 {
                     question: (input) => input.question,
                     sql: (input) => input.sql,
                     results: (input) => input.results,
-                    resultCount: (input) => input.resultCount
+                    resultCount: (input) => input.resultCount || 0
                 },
                 responsePrompt,
                 this.llm,
-                (output) => ({ text: output.content })
+                (output) => output.content
             ]);
+
+            const formattedResults = Array.isArray(results)
+                ? JSON.stringify(results.slice(0, 10), null, 2)  // top 10 only
+                : String(results);
 
             const result = await responseChain.invoke({
                 question,
                 sql,
-                results: JSON.stringify(limitedResults, null, 2),
-                resultCount: `${limitedResults.length}${limitedResults.length < results.length ? ' out of ' + results.length : ''}`
+                results: formattedResults,
+                resultCount: Array.isArray(results) ? results.length : 1
             });
 
-            return result.text.trim();
+            return result.trim();
         } catch (error) {
-            logger.error('Error generating response:', error);
-            return `I found ${results.length} results for your question, but I'm having trouble generating a detailed explanation.`;
+            logger.error('Error generating natural language response:', error);
+            throw new Error(`Response generation failed: ${error.message}`);
         }
     }
 }
-
 const dataAgent = new DataAgent();
 export default dataAgent;
