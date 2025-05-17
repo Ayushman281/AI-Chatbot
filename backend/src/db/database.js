@@ -5,14 +5,13 @@ const { Pool } = pg;
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Use DATABASE_URL environment variable 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false  // Required for Render PostgreSQL
-    }
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false  // Required for Render PostgreSQL
+  }
 });
-
-export default pool;
 
 // Test the connection
 pool.query('SELECT NOW()', (err, res) => {
