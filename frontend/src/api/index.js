@@ -8,7 +8,7 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 120000,  // Increase from 60000 to 120000 (2 minutes)
+  timeout: 120000,  // 2 minutes
 });
 
 // Submit a query to the AI data agent

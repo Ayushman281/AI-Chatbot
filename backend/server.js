@@ -36,7 +36,8 @@ const PORT = process.env.PORT || 8000;
 // Middleware
 app.use(cors({
     origin: [
-        'https://ai-chatbot-five-flame.vercel.app', // <-- replace with your actual Vercel URL
+        'https://ai-chatbot-five-flame.vercel.app', // No trailing slash!
+        'http://localhost:5173'
     ],
     credentials: true,
 }));

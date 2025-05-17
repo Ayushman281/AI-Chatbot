@@ -262,18 +262,21 @@ DATABASE SCHEMA:
 - "artist": ArtistIdentifier (PK), NM (name), ctry (country)
 - "genre": id (PK), genre_type
 
-RULES:
-- "album" → "albm" table, "release year" → "col1" in "albm", "track" → "trk", "price" → "cost"
-- For albums released in a year: SELECT * FROM albm WHERE col1 = YEAR;
-- For tracks: SELECT * FROM trk WHERE ...
-- Never use standard names like "album" or "release_year" in SQL.
+IMPORTANT RULES:
+1. ALWAYS use the exact table and column names from the schema above.
+2. NEVER use standard names like "album" or "track" in SQL.
+3. For release year in albums, ALWAYS use "col1" column in "albm" table.
+4. For album titles, ALWAYS use "ttle" column.
 
 EXAMPLES:
 Q: What album was released in 2016?
-A: SELECT * FROM albm WHERE col1 = 2016;
+A: SELECT ttle AS album_title FROM albm WHERE col1 = 2016;
 
 Q: List all tracks that cost more than 1.00
-A: SELECT * FROM trk WHERE cost > 1.00;
+A: SELECT TrackTitle FROM trk WHERE cost > 1.00;
+
+Q: Which artists have albums released in 2016?
+A: SELECT a.NM AS artist_name, b.ttle AS album_title FROM artist a JOIN albm b ON a.ArtistIdentifier = b.a_id WHERE b.col1 = 2016;
 
 USER QUESTION: {question}
 
