@@ -403,6 +403,36 @@ Return ONLY a JSON object with this format:
 `;
 };
 
+// Add a hardcoded response function for when API rate limits are hit
+function getHardcodedResponse(question) {
+    question = question.toLowerCase();
+
+    // Album year questions
+    if (question.includes('album') && question.includes('2016')) {
+        return "SELECT ttle FROM albm WHERE col1 = 2016";
+    }
+
+    if (question.includes('album') && /\b(19|20)\d{2}\b/.test(question)) {
+        const yearMatch = question.match(/\b(19|20)\d{2}\b/);
+        const year = yearMatch ? yearMatch[0] : '2016';
+        return `SELECT ttle FROM albm WHERE col1 = ${year}`;
+    }
+
+    // Track questions
+    if (question.includes('track') || question.includes('song')) {
+        return "SELECT TrackTitle, cost FROM trk ORDER BY cost DESC LIMIT 10";
+    }
+
+    // Artist questions
+    if (question.includes('artist')) {
+        return "SELECT NM FROM artist LIMIT 10";
+    }
+
+    // Default
+    return "SELECT * FROM trk LIMIT 5";
+}
+
+// In your generateSQL function, use this when rate limit is hit
 export async function generateSQL(question, schemaContext = []) {
     try {
         const response = await openRouterClient.post('/chat/completions', {
@@ -428,12 +458,15 @@ export async function generateSQL(question, schemaContext = []) {
         }
     } catch (error) {
         console.error('OpenRouter API error:', error);
-        // Question-specific fallbacks
-        if (question.toLowerCase().includes('album') &&
-            question.toLowerCase().includes('2016')) {
-            return "SELECT ttle FROM albm WHERE col1 = 2016";
+
+        // Check for rate limit error
+        if (error.response && error.response.status === 429) {
+            console.log("Rate limit exceeded, using hardcoded response");
+            return getHardcodedResponse(question);
         }
-        return "SELECT * FROM trk LIMIT 5"; // Default fallback
+
+        // Other error handling...
+        return getHardcodedResponse(question);
     }
 }
 

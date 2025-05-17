@@ -1,15 +1,7 @@
 import * as llmService from '../services/llmService.js';
 import * as db from '../db/database.js';
-import { buildFullSchemaContext } from '../services/schemaService.js';
 
-// Update the validateAndFixSQL function to handle non-string inputs
 function validateAndFixSQL(sql) {
-    // Check if sql is undefined or not a string
-    if (!sql || typeof sql !== 'string') {
-        console.error('Invalid SQL input:', sql);
-        throw new Error('Invalid SQL input: not a string');
-    }
-
     // Fix common misspellings
     const fixes = [
         { wrong: /\btle\b/g, correct: "ttle" },
@@ -36,7 +28,7 @@ function validateAndFixSQL(sql) {
         console.log("Fixed:", fixedSQL);
     }
 
-    return fixedSQL.replace(/\s+/g, ' ').trim();
+    return fixedSQL;
 }
 
 // Add this function to prepare better chart data:
@@ -78,39 +70,34 @@ function prepareChartData(question, result) {
     };
 }
 
-// Then fix the SQL extraction from LLM response
+// Add this helper function
+function extractYearFromQuestion(question) {
+    const yearMatch = question.match(/\b(19|20)\d{2}\b/);
+    return yearMatch ? yearMatch[0] : null;
+}
+
+// Update extractSQLFromResponse function
 function extractSQLFromResponse(response) {
     try {
-        // First try to parse as JSON
-        const parsedResponse = typeof response === 'string' ? JSON.parse(response) : response;
-
-        // If it's JSON with an sql property, use that
-        if (parsedResponse && parsedResponse.sql) {
-            return parsedResponse.sql;
-        }
-
-        // Fall back to regex extraction if it's a string
-        if (typeof response === 'string') {
-            const sqlRegex = /===SQL===\s*([\s\S]*?)\s*===ENDSQL===|```sql\s*([\s\S]*?)\s*```/;
-            const match = response.match(sqlRegex);
-
-            if (match) {
-                return (match[1] || match[2]).trim();
+        // First try parsing as JSON
+        try {
+            const parsedResponse = JSON.parse(response);
+            return parsedResponse.sql || response;
+        } catch (e) {
+            // If it's not JSON, check if it's a SQL string
+            if (typeof response === 'string' &&
+                (response.trim().toUpperCase().startsWith('SELECT') ||
+                    response.trim().toUpperCase().startsWith('WITH'))) {
+                return response;
             }
 
-            // Last resort - look for SQL statements
-            const fallbackRegex = /(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)\s+[\s\S]+?;/i;
-            const fallbackMatch = response.match(fallbackRegex);
-
-            if (fallbackMatch) {
-                return fallbackMatch[0].trim();
-            }
+            // Extract SQL using regex if it contains SQL
+            const sqlMatch = response.match(/```sql\s*([\s\S]*?)```|`(SELECT[\s\S]*?);`|SELECT[\s\S]*?;/i);
+            return sqlMatch ? (sqlMatch[1] || sqlMatch[2] || sqlMatch[0]).trim() : response;
         }
-
-        throw new Error('Could not extract SQL from response');
     } catch (error) {
-        console.error('Error extracting SQL:', error);
-        throw error;
+        console.error("Error extracting SQL:", error);
+        return null;
     }
 }
 
@@ -144,15 +131,13 @@ async function executeQuery(sql) {
     }
 }
 
-// Add this helper function
-function extractYearFromQuestion(question) {
-    const yearMatch = question.match(/\b(19|20)\d{2}\b/);
-    return yearMatch ? yearMatch[0] : null;
-}
-
-// Then in your handleAgentQuery function
 export const handleAgentQuery = async (req, res) => {
     const { question } = req.body;
+
+    if (!question) {
+        return res.status(400).json({ error: "Question is required" });
+    }
+
     try {
         console.log(`Processing question: "${question}"`);
 
@@ -166,9 +151,13 @@ export const handleAgentQuery = async (req, res) => {
 
             try {
                 const result = await db.query(fallbackSQL);
+                const albumTitles = result.rows && result.rows.length > 0
+                    ? result.rows.map(r => r.album_title || r.ttle).join(', ')
+                    : "no albums";
+
                 return res.json({
-                    answer: `The albums released in ${year} were: ${result.rows.map(r => r.album_title).join(', ')}`,
-                    result: result.rows,
+                    answer: `The albums released in ${year} were: ${albumTitles}`,
+                    result: result.rows || [],
                     sql: fallbackSQL,
                     chartType: "bar"
                 });
@@ -177,11 +166,8 @@ export const handleAgentQuery = async (req, res) => {
             }
         }
 
-        // Get complete schema information
-        const completeSchemaInfo = await buildFullSchemaContext();
-
-        // Use the complete schema for initial query
-        const llmResponse = await llmService.generateSQL(question, completeSchemaInfo);
+        // Generate SQL using the llmService
+        const llmResponse = await llmService.generateSQL(question, db.schemaInfo);
         console.log(`LLM Response: ${JSON.stringify(llmResponse)}`);
 
         try {
@@ -218,20 +204,22 @@ export const handleAgentQuery = async (req, res) => {
                 if (error.message?.includes('does not exist') || error.code === '42P01') {
                     console.log("Schema error detected, retrying with explicit schema");
 
-                    // Get full schema again, but add specific guidance
-                    const completeSchemaInfo = await buildFullSchemaContext();
+                    // Get the actual table names from the database
+                    const actualTables = await db.getActualTableNames();
 
-                    const enhancedContext = `
-                        ${completeSchemaInfo}
-                        
-                        Your previous query failed because you used incorrect table or column names.
-                        The specific error was: ${error.message}
-                        
-                        Please ensure you use EXACTLY the table and column names as shown above.
-                        For queries about artists and albums, you likely need to join the "Artist" and "Album" tables.
-                    `;
+                    // Get columns for the 'trk' table specifically (used in this query)
+                    const trkColumns = await db.getTableColumns('trk');
 
-                    const correctedQuery = await llmService.generateSQL(question, enhancedContext);
+                    // Add explicit schema correction to the prompt
+                    const correctedQuery = await llmService.generateSQL(
+                        question,
+                        db.schemaInfo,
+                        `The previous query failed because it used incorrect column names. 
+                         The 'trk' table has these columns: ${trkColumns.join(', ')}.
+                         The tables in the database are: ${actualTables.join(', ')}.
+                         For artist information, join with the proper artist table.`
+                    );
+
                     const correctedResult = await executeQuery(correctedQuery);
                     console.log(`Corrected query returned ${correctedResult.length} results`);
 
